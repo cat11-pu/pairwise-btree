@@ -65,8 +65,14 @@ class BPlusTree:
             parent = node.parent
             pos = parent.children.index(node)
             if pos > 0:
-                parent.keys[pos - 1] = node.keys[0]
+                parent.keys[pos - 1] = self._subtree_min(node)
             node = parent
+
+    @staticmethod
+    def _subtree_min(node):
+        while not node.leaf:
+            node = node.children[0]
+        return node.keys[0]
 
     # ------------------------------------------------------------------
     # queries
@@ -93,7 +99,7 @@ class BPlusTree:
         while node is not None:
             for pos in range(len(node.keys)):
                 key = node.keys[pos]
-                if key <= low:
+                if key < low:
                     continue
                 if key > high:
                     return result
@@ -107,7 +113,7 @@ class BPlusTree:
         while node is not None:
             if pos >= len(node.keys):
                 node = node.next
-                pos = 1
+                pos = 0
                 continue
             yield node.keys[pos], node.values[pos]
             pos += 1
@@ -138,7 +144,7 @@ class BPlusTree:
 
     def _split_leaf(self, node):
         mid = len(node.keys) // 2
-        sep = node.keys[mid - 1]
+        sep = node.keys[mid]
         right = Node(leaf=True)
         right.keys = node.keys[mid:]
         right.values = node.values[mid:]
@@ -157,6 +163,8 @@ class BPlusTree:
         right.children = node.children[mid + 1:]
         node.keys = node.keys[:mid]
         node.children = node.children[:mid + 1]
+        for child in right.children:
+            child.parent = right
         self._insert_separator(node, promote, right)
 
     def _insert_separator(self, left, key, right):
@@ -168,6 +176,7 @@ class BPlusTree:
             left.parent = root
             right.parent = root
             self.root = root
+            self.height += 1
             return
         pos = parent.children.index(left)
         parent.keys.insert(pos, key)
@@ -189,7 +198,8 @@ class BPlusTree:
         del leaf.values[pos]
         self.size -= 1
         self._rebalance(leaf)
-        self._refresh_upward(self._find_leaf(key))
+        if leaf.parent is not None:
+            self._refresh_upward(leaf)
         return True
 
     def _rebalance(self, node):
@@ -198,7 +208,7 @@ class BPlusTree:
             pos = parent.children.index(node)
             right = parent.children[pos + 1] if pos + 1 < len(parent.children) else None
             left = parent.children[pos - 1] if pos > 0 else None
-            if right is not None and len(right.keys) >= MIN_KEYS:
+            if right is not None and len(right.keys) > MIN_KEYS:
                 self._borrow_from_right(node, parent, pos, right)
                 return
             if left is not None and len(left.keys) > MIN_KEYS:
@@ -256,6 +266,7 @@ class BPlusTree:
             left.values.extend(right.values)
             left.next = right.next
         else:
+            left.keys.append(sep)
             left.keys.extend(right.keys)
             for child in right.children:
                 child.parent = left
